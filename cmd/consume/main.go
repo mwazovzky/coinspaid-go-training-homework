@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"homework/services/message"
 	"homework/services/pubsub"
 	"log"
@@ -13,8 +12,6 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/nsqio/go-nsq"
 )
-
-type messageHandler struct{}
 
 func init() {
 	godotenv.Load()
@@ -38,7 +35,8 @@ func main() {
 	}
 
 	// Register message handler
-	consumer.AddHandler(&messageHandler{})
+	handler := message.NewMessageHandler()
+	consumer.AddHandler(handler)
 
 	err = pubsub.Connect(consumer, host, port)
 	if err != nil {
@@ -51,36 +49,4 @@ func main() {
 	<-sigChan
 
 	consumer.Stop()
-}
-
-// Returning nil will automatically send a FIN command to NSQ to mark the message as processed.
-// Returning non-nil error will automatically send a REQ command to NSQ to re-queue the message.
-// Message with an empty body is ignored/discarded
-func (h *messageHandler) HandleMessage(m *nsq.Message) error {
-	if len(m.Body) == 0 {
-		return nil
-	}
-
-	return processMessage(m.Body)
-}
-
-func processMessage(body []byte) error {
-	var msg message.Message
-
-	if err := json.Unmarshal(body, &msg); err != nil {
-		log.Println("Error when Unmarshaling the message body, Err : ", err)
-		return err
-	}
-
-	log.Println("----- Message ------")
-	log.Println("Type : ", msg.Type)
-	log.Println("Status : ", msg.Status)
-	log.Println("Txis : ", msg.Txis)
-	log.Println("Currency : ", msg.Currency)
-	log.Println("Address : ", msg.Address)
-	log.Println("Amount : ", msg.Amount)
-	log.Println("Timestamp : ", msg.Timestamp)
-	log.Println("--------------------")
-
-	return nil
 }

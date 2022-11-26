@@ -26,8 +26,8 @@ type Address struct {
 	Currency string
 }
 
-// count is number of transaction to generate
-const count = 5
+// count is number of transactions to generate
+const count = 50
 
 func main() {
 	db := connectDB()
@@ -126,7 +126,7 @@ func createTransaction(addresses []Address) message.Message {
 		Status:    statuses[rand.Intn(2)],
 		Currency:  address.Currency,
 		Address:   address.Hash,
-		Txis:      faker.UUIDHyphenated(),
+		Txid:      faker.UUIDHyphenated(),
 		Amount:    rand.Intn(1000),
 		Timestamp: time.Now().String(),
 	}
