@@ -1,7 +1,8 @@
 package main
 
 import (
-	"homework/services/message"
+	"homework/services/database"
+	"homework/services/messagehandler"
 	"homework/services/pubsub"
 	"log"
 	"os"
@@ -18,24 +19,35 @@ func init() {
 }
 
 func main() {
+	dbcfg := database.NewConfig()
+	loadDBConfig(dbcfg)
+
+	db, err := database.Connect(dbcfg)
+	if err != nil {
+		log.Println("ERROR", err)
+		os.Exit(1)
+	}
+
+	defer database.Close(db)
+
 	host := os.Getenv("NSQ_LOOKUP_HOST")
 	port := os.Getenv("NSQ_LOOKUP_PORT")
 	topic := os.Getenv("NSQ_TOPIC")
 	channel := os.Getenv("NSQ_CHANNEL")
 
-	cfg := nsq.NewConfig()
-	cfg.MaxAttempts = 10
-	cfg.MaxInFlight = 5
-	cfg.MaxRequeueDelay = time.Second * 900
-	cfg.DefaultRequeueDelay = time.Second * 0
+	nsqcfg := nsq.NewConfig()
+	nsqcfg.MaxAttempts = 10
+	nsqcfg.MaxInFlight = 5
+	nsqcfg.MaxRequeueDelay = time.Second * 900
+	nsqcfg.DefaultRequeueDelay = time.Second * 0
 
-	consumer, err := pubsub.NewConsumer(cfg, topic, channel)
+	consumer, err := pubsub.NewConsumer(nsqcfg, topic, channel)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Register message handler
-	handler := message.NewMessageHandler()
+	handler := messagehandler.NewMessageHandler(db)
 	consumer.AddHandler(handler)
 
 	err = pubsub.Connect(consumer, host, port)
@@ -49,4 +61,12 @@ func main() {
 	<-sigChan
 
 	consumer.Stop()
+}
+
+func loadDBConfig(cfg *database.Config) {
+	cfg.Host = os.Getenv("DB_HOST")
+	cfg.Port = os.Getenv("DB_PORT")
+	cfg.Database = os.Getenv("DB_DATABASE")
+	cfg.User = os.Getenv("DB_USER")
+	cfg.Password = os.Getenv("DB_PASSWORD")
 }

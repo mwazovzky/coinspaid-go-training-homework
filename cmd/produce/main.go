@@ -3,15 +3,14 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"homework/models/message"
 	"homework/services/database"
-	"homework/services/message"
 	"homework/services/pubsub"
 	"log"
 	"math/rand"
 	"os"
 	"time"
 
-	faker "github.com/bxcodec/faker/v3"
 	"github.com/joho/godotenv"
 	"github.com/nsqio/go-nsq"
 )
@@ -21,13 +20,8 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-type Address struct {
-	Hash     string
-	Currency string
-}
-
 // count is number of transactions to generate
-const count = 50
+const count = 20
 
 func main() {
 	db := connectDB()
@@ -83,52 +77,9 @@ func getProducer() *nsq.Producer {
 
 // generateTransactions generates batch of fake transactions
 func generateTransactions(db *sql.DB, count int, operations *[]message.Message) {
-	var addresses []Address
-
-	getAddresses(db, &addresses)
-
 	for i := 0; i < count; i++ {
-		*operations = append(*operations, createTransaction(addresses))
-	}
-}
-
-// getAddresses gets addresses from database
-func getAddresses(db *sql.DB, addresses *[]Address) error {
-	data, err := db.Query("SELECT a.hash, c.iso FROM addresses a LEFT JOIN currencies c ON a.currency_id=c.id")
-	if err != nil {
-		log.Println("Failed to select addresses", err)
-		return err
-	}
-
-	var address Address
-
-	for data.Next() {
-		err := data.Scan(&address.Hash, &address.Currency)
-		if err != nil {
-			log.Println("Failed to scan currency row:", err)
-			return err
-		}
-
-		*addresses = append(*addresses, address)
-	}
-
-	return nil
-}
-
-// createTransaction creates fake message in final status - Cancelled of Confirmed
-func createTransaction(addresses []Address) message.Message {
-	types := []string{"Deposit", "Withdrawal"}
-	statuses := []string{"Cancelled", "Confirmed"}
-	address := addresses[rand.Intn(len(addresses))]
-
-	return message.Message{
-		Type:      types[rand.Intn(2)],
-		Status:    statuses[rand.Intn(2)],
-		Currency:  address.Currency,
-		Address:   address.Hash,
-		Txid:      faker.UUIDHyphenated(),
-		Amount:    rand.Intn(1000),
-		Timestamp: time.Now().String(),
+		msg := message.MakeFakeMessage(db)
+		*operations = append(*operations, msg)
 	}
 }
 

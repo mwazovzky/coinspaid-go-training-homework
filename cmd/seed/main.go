@@ -1,10 +1,12 @@
 package main
 
 import (
-	"database/sql"
 	"log"
 	"os"
 
+	"homework/models/address"
+	"homework/models/message"
+	"homework/models/transaction"
 	"homework/services/database"
 
 	"github.com/joho/godotenv"
@@ -26,7 +28,28 @@ func main() {
 
 	defer database.Close(db)
 
-	getCurrencies(db)
+	msg := message.MakeFakeMessage(db)
+
+	var adr address.Address
+	addressRepository := address.NewAddressRepository(db)
+	err = addressRepository.Get(&adr, msg.Address, msg.Currency)
+	if err != nil {
+		log.Println("Error: find address", err)
+		return
+	}
+
+	txRepository := transaction.NewTransactionRepository(db)
+	err = txRepository.Create(msg.Type, msg.Status, adr.ID, msg.Txid, msg.Amount)
+	if err != nil {
+		log.Println("Error: create address", err)
+		return
+	}
+
+	err = txRepository.Update(msg.Txid, adr.ID, "Ignored")
+	if err != nil {
+		log.Println("Error: create address", err)
+		return
+	}
 
 	log.Println("All good")
 }
@@ -37,35 +60,4 @@ func loadDBConfig(cfg *database.Config) {
 	cfg.Database = os.Getenv("DB_DATABASE")
 	cfg.User = os.Getenv("DB_USER")
 	cfg.Password = os.Getenv("DB_PASSWORD")
-}
-
-type Currency struct {
-	ID  int
-	ISO string
-}
-
-func getCurrencies(db *sql.DB) error {
-	var currencies []Currency
-
-	data, err := db.Query("SELECT id, iso FROM currencies")
-	if err != nil {
-		log.Println("Failed to select currencies", err)
-		return err
-	}
-
-	var currency Currency
-
-	for data.Next() {
-		err := data.Scan(&currency.ID, &currency.ISO)
-		if err != nil {
-			log.Println("Failed to scan currency row:", err)
-			return err
-		}
-
-		currencies = append(currencies, currency)
-	}
-
-	log.Println(currencies)
-
-	return nil
 }

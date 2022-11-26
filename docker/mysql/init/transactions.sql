@@ -37,21 +37,22 @@ CREATE TABLE IF NOT EXISTS transactions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     type VARCHAR(255) NOT NULL,
     status VARCHAR(255) NOT NULL,
+    address_id INT,
     txid VARCHAR(255),
     amount INT NOT NULL,
-    address_id INT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_address FOREIGN KEY (address_id) REFERENCES addresses(id) ON DELETE CASCADE
+    CONSTRAINT fk_address FOREIGN KEY (address_id) REFERENCES addresses(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_address_id_txid (address_id, txid)
 );
 
-CREATE TABLE IF NOT EXISTS events (
+CREATE TABLE IF NOT EXISTS messages (
     id INT AUTO_INCREMENT PRIMARY KEY,
     type VARCHAR(255) NOT NULL,
     status VARCHAR(255) NOT NULL,
-    iso VARCHAR(255) NOT NULL,
-    hash VARCHAR(255) NOT NULL,
+    currency VARCHAR(255) NOT NULL,
+    address VARCHAR(255) NOT NULL,
     txid VARCHAR(255) NOT NULL,
     amount INT NOT NULL,
-    created_at DATETIME NOT NULL,
-    processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    timestamp DATETIME NOT NULL,
+    cretaed_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
