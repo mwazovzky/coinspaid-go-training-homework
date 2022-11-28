@@ -3,46 +3,44 @@ package messagehandler
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"homework/models/address"
 	"homework/models/message"
 	"homework/models/transaction"
 	"log"
+	"runtime"
 
 	"github.com/nsqio/go-nsq"
 )
 
 type MessageHandler struct {
-	db          *sql.DB
-	deposits    chan message.Message
-	withdrawals chan message.Message
+	db     *sql.DB
+	buffer chan message.Message
 }
 
-const bufferSize = 10
+const bufferSize = 100
 
 func NewMessageHandler(db *sql.DB) *MessageHandler {
-	deposits := make(chan message.Message, bufferSize)
-	withdrawals := make(chan message.Message, bufferSize)
+	buffer := make(chan message.Message, bufferSize)
 
-	go func() {
-		for msg := range deposits {
-			process(db, msg)
-		}
-	}()
+	// g := 1
+	g := runtime.GOMAXPROCS(0)
 
-	go func() {
-		for msg := range withdrawals {
-			process(db, msg)
-		}
-	}()
+	for i := 0; i < g; i++ {
+		go func() {
+			for msg := range buffer {
+				fmt.Println("buffer size", len(buffer))
+				processMessage(db, msg)
+			}
+		}()
+	}
 
-	return &MessageHandler{db, deposits, withdrawals}
+	return &MessageHandler{db, buffer}
 }
 
 // Returning nil will automatically send a FIN command to NSQ to mark the message as processed.
 // Returning non-nil error will automatically send a REQ command to NSQ to re-queue the message.
-// Message with an empty body is ignored/discarded
+// Check nsq config for processing REQ, currenctly there us a delay id Error return
 func (mh *MessageHandler) HandleMessage(m *nsq.Message) error {
 	if len(m.Body) == 0 {
 		log.Println("Error: empty message body")
@@ -50,8 +48,6 @@ func (mh *MessageHandler) HandleMessage(m *nsq.Message) error {
 	}
 
 	var msg message.Message
-
-	// unmarshall messages
 	err := json.Unmarshal(m.Body, &msg)
 	if err != nil {
 		log.Println("Error: unmarshaling message body", err)
@@ -61,37 +57,26 @@ func (mh *MessageHandler) HandleMessage(m *nsq.Message) error {
 	// validate message, otherwise FIN
 
 	// check if address exists, otherwise FIN
-	addressRepository := address.NewAddressRepository(mh.db)
-	exist := addressRepository.Exist(msg.Address, msg.Currency)
-	if !exist {
-		log.Println("Error: unexpected address", msg.Address)
+	if !existAddress(mh.db, msg) {
+		log.Println("Error: unexpected address", msg.Currency, msg.Address)
 		return nil
 	}
 
-	// check if transaction exists if message type is not created, otherwise REQ
-	if msg.Status != message.StatusCreated {
-		txRepository := transaction.NewTransactionRepository(mh.db)
-		exist := txRepository.Exist(msg.Txid, msg.Address, msg.Currency)
-		if !exist {
-			log.Println("Error: unexpected status", msg.Status)
-			m.RequeueWithoutBackoff(0)
-			return nil
-		}
+	// ignore duplicate messages, if transaction already exists and tx.Status == msg.status retun nil
+
+	// if message status is not created check if transaction exists, otherwise wait for create message - REQ
+	if msg.Status != message.StatusCreated && !existTransaction(mh.db, msg) {
+		log.Println("Error: unexpected status", msg.Status)
+		m.RequeueWithoutBackoff(0)
+		return nil
 	}
 
-	switch msg.Type {
-	case message.TypeDeposit:
-		mh.deposits <- msg
-	case message.TypeWithdrawal:
-		mh.withdrawals <- msg
-	default:
-		log.Println("Error: upprocessable message type")
-	}
+	mh.buffer <- msg
 
 	return nil
 }
 
-func process(db *sql.DB, msg message.Message) {
+func processMessage(db *sql.DB, msg message.Message) {
 	createMessage(db, msg)
 
 	switch msg.Status {
@@ -109,6 +94,20 @@ func createMessage(db *sql.DB, msg message.Message) error {
 	err := messageRepository.Create(msg)
 
 	return err
+}
+
+func existAddress(db *sql.DB, msg message.Message) bool {
+	addressRepository := address.NewAddressRepository(db)
+	exist := addressRepository.Exist(msg.Address, msg.Currency)
+
+	return exist
+}
+
+func existTransaction(db *sql.DB, msg message.Message) bool {
+	txRepository := transaction.NewTransactionRepository(db)
+	exist := txRepository.Exist(msg.Txid, msg.Address, msg.Currency)
+
+	return exist
 }
 
 func createTransaction(db *sql.DB, msg message.Message) error {
@@ -146,10 +145,4 @@ func getAddress(db *sql.DB, msg message.Message, adr *address.Address) error {
 	err := addressRepository.Get(adr, msg.Address, msg.Currency)
 
 	return err
-}
-
-func requeue(msg message.Message) error {
-	txt := fmt.Sprintf("Error: unexpected status, %s", msg.Status)
-	log.Println(txt)
-	return errors.New(txt)
 }

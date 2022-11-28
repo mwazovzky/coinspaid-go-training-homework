@@ -21,7 +21,7 @@ func init() {
 }
 
 // count is number of transactions to generate
-const count = 20
+const count = 1000
 
 func main() {
 	db := connectDB()
